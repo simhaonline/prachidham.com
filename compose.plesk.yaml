@@ -1,0 +1,28 @@
+# Plesk reverse-proxy deployment overlay.
+#
+# Use this when the host is managed by Plesk and Plesk's own nginx already owns
+# inbound TCP 80/443. Plesk terminates TLS and reverse-proxies to the web
+# container, so the Caddy service from compose.production.yaml is deliberately
+# NOT started here. The base file keeps web bound to 127.0.0.1:${WEB_PORT}; no
+# other service publishes a port.
+#
+# The required Plesk nginx directives (including the private no-store/noindex
+# headers the Caddyfile used to add) are documented in docs/plesk-deployment.md.
+#
+# Run with:
+#   docker compose -f compose.yaml -f compose.plesk.yaml up --build -d
+#
+# PUBLIC_SITE_HOST is a bare DNS name (for example, prachidham.com), not a URL.
+services:
+  api:
+    environment:
+      PUBLIC_APP_ORIGIN: https://${PUBLIC_SITE_HOST:?Set PUBLIC_SITE_HOST in .env}
+
+  web:
+    build:
+      args:
+        PUBLIC_SITE_ORIGIN: https://${PUBLIC_SITE_HOST:?Set PUBLIC_SITE_HOST in .env}
+        PUBLIC_SITE_INDEXABLE: ${PUBLIC_SITE_INDEXABLE:-false}
+    environment:
+      PUBLIC_SITE_ORIGIN: https://${PUBLIC_SITE_HOST:?Set PUBLIC_SITE_HOST in .env}
+      PUBLIC_SITE_INDEXABLE: ${PUBLIC_SITE_INDEXABLE:-false}

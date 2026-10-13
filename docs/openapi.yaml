@@ -1,0 +1,415 @@
+openapi: 3.1.0
+info:
+  title: Prachi Dham Operations API
+  version: 0.1.0
+  description: >-
+    Internal first-release foundation. Generic records are not complete domain suites.
+    Version-breaking changes require a new /v2 prefix and a migration guide.
+servers:
+  - url: /api
+    description: Same-origin Next.js proxy
+security:
+  - sessionCookie: []
+paths:
+  /v1/health:
+    get:
+      summary: Check API liveness
+      security: []
+      responses:
+        '200': { description: Liveness, content: { application/json: { schema: { $ref: '#/components/schemas/Health' } } } }
+  /v1/auth/login:
+    post:
+      summary: Sign in with a provisioned staff account
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, minLength: 12 }
+      responses:
+        '200':
+          description: An HttpOnly session cookie is set
+          headers:
+            Set-Cookie: { description: HttpOnly pd_session cookie, schema: { type: string } }
+          content: { application/json: { schema: { $ref: '#/components/schemas/Me' } } }
+        '400': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
+  /v1/auth/logout:
+    post:
+      summary: Revoke current session
+      responses:
+        '200': { description: Session revoked, content: { application/json: { schema: { type: object, properties: { ok: { type: boolean } } } } } }
+        '401': { $ref: '#/components/responses/Problem' }
+  /v1/me:
+    get:
+      summary: Read current staff identity
+      responses:
+        '200': { description: Identity, content: { application/json: { schema: { $ref: '#/components/schemas/Me' } } } }
+        '401': { $ref: '#/components/responses/Problem' }
+  /v1/modules:
+    get:
+      summary: List accessible workspaces
+      responses:
+        '200':
+          description: Role-filtered module catalog
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  modules: { type: array, items: { $ref: '#/components/schemas/Module' } }
+  /v1/dashboard:
+    get:
+      summary: Get live organization-scoped counts and recent records
+      responses:
+        '200':
+          description: Overview
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [totalRecords, modules, recent]
+                properties:
+                  totalRecords: { type: integer, example: 0 }
+                  modules:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        key: { type: string }
+                        count: { type: integer }
+                  recent: { type: array, items: { $ref: '#/components/schemas/RecentRecord' } }
+  /v1/modules/{moduleKey}/records:
+    parameters:
+      - { $ref: '#/components/parameters/ModuleKey' }
+    get:
+      summary: List and search records in one accessible workspace
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, default: 25, minimum: 1, maximum: 100 } }
+        - { name: offset, in: query, schema: { type: integer, default: 0, minimum: 0 } }
+        - { name: search, in: query, schema: { type: string, maxLength: 100 } }
+      responses:
+        '200':
+          description: Paginated records
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, pagination]
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/Record' } }
+                  pagination:
+                    type: object
+                    required: [limit, offset, total]
+                    properties:
+                      limit: { type: integer }
+                      offset: { type: integer }
+                      total: { type: integer }
+        '403': { $ref: '#/components/responses/Problem' }
+    post:
+      summary: Create a common workspace record
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/RecordInput' } } } }
+      responses:
+        '201': { description: Record created, content: { application/json: { schema: { $ref: '#/components/schemas/Record' } } } }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+  /v1/modules/{moduleKey}/records/{id}:
+    parameters:
+      - { $ref: '#/components/parameters/ModuleKey' }
+      - { $ref: '#/components/parameters/RecordId' }
+    get:
+      summary: Read one organization-scoped record
+      responses:
+        '200': { description: Record, content: { application/json: { schema: { $ref: '#/components/schemas/Record' } } } }
+        '404': { $ref: '#/components/responses/Problem' }
+    patch:
+      summary: Replace common fields of a record
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/RecordInput' } } } }
+      responses:
+        '200': { description: Updated record, content: { application/json: { schema: { $ref: '#/components/schemas/Record' } } } }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+  /v1/modules/bpm/records/{id}/transition:
+    parameters:
+      - { $ref: '#/components/parameters/RecordId' }
+    post:
+      summary: Submit or decide a draft approval request
+      description: Draft to submitted is allowed for staff and above. Submitted to approved/rejected requires manager or above.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status: { type: string, enum: [submitted, approved, rejected] }
+      responses:
+        '201': { description: Transitioned record, content: { application/json: { schema: { $ref: '#/components/schemas/Record' } } } }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+  /v1/intelligence/summary:
+    post:
+      summary: Summarize an authorized non-sensitive operational note
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title, text]
+              properties:
+                title: { type: string, minLength: 1, maxLength: 160 }
+                text: { type: string, minLength: 1, maxLength: 4000 }
+      responses:
+        '201': { description: Model summary, content: { application/json: { schema: { type: object, properties: { summary: { type: string } } } } } }
+        '503': { $ref: '#/components/responses/Problem' }
+  /v1/geo/distance:
+    get:
+      summary: Calculate great-circle distance between two coordinates
+      parameters:
+        - { name: lat1, in: query, required: true, schema: { type: number, minimum: -90, maximum: 90 } }
+        - { name: lon1, in: query, required: true, schema: { type: number, minimum: -180, maximum: 180 } }
+        - { name: lat2, in: query, required: true, schema: { type: number, minimum: -90, maximum: 90 } }
+        - { name: lon2, in: query, required: true, schema: { type: number, minimum: -180, maximum: 180 } }
+      responses:
+        '200': { description: Kilometers, content: { application/json: { schema: { type: object, properties: { kilometers: { type: number } } } } } }
+        '400': { $ref: '#/components/responses/Problem' }
+  /v1/catalog/config:
+    get:
+      summary: Read whether privacy-gated non-payment inquiries are enabled
+      security: []
+      responses:
+        '200': { description: Inquiry configuration, content: { application/json: { schema: { type: object, properties: { inquiriesEnabled: { type: boolean }, policyUrl: { type: [string, 'null'] }, policyVersion: { type: [string, 'null'] } } } } } }
+  /v1/catalog:
+    get:
+      summary: List only published listings with an approved translation for the requested language
+      security: []
+      parameters:
+        - { name: locale, in: query, schema: { type: string, default: gu } }
+        - { name: kind, in: query, schema: { type: string, enum: [product, service] } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 50 } }
+        - { name: offset, in: query, schema: { type: integer, minimum: 0 } }
+      responses:
+        '200': { description: Published listings with pagination, content: { application/json: { schema: { type: object, properties: { data: { type: array, items: { $ref: '#/components/schemas/CatalogEntry' } }, pagination: { type: object } } } } } }
+  /v1/catalog/{slug}:
+    get:
+      summary: Read one published listing in one reviewed language
+      security: []
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+        - { name: locale, in: query, schema: { type: string, default: gu } }
+      responses:
+        '200': { description: Reviewed listing and approved sibling slugs, content: { application/json: { schema: { $ref: '#/components/schemas/CatalogEntry' } } } }
+        '404': { $ref: '#/components/responses/Problem' }
+  /v1/catalog/inquiries:
+    post:
+      summary: Request availability; never charges, books or issues a receipt
+      description: Off by default. Requires an approved policy URL/version and Valkey rate limiting in production.
+      security: []
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/InquiryInput' } } } }
+      responses:
+        '201': { description: Pending staff review; no payment, content: { application/json: { schema: { type: object, properties: { id: { type: string, format: uuid }, status: { type: string, const: pending_review }, message: { type: string } } } } } }
+        '400': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Problem' }
+  /v1/admin/catalog:
+    get:
+      summary: List organization catalog drafts and reviewed translations for owner/admin
+      responses:
+        '200': { description: Organization catalog and pagination }
+        '403': { $ref: '#/components/responses/Problem' }
+    post:
+      summary: Create an unpublished product or service draft
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CatalogItemInput' } } } }
+      responses:
+        '201': { description: Draft created }
+        '403': { $ref: '#/components/responses/Problem' }
+  /v1/admin/catalog/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    patch:
+      summary: Change item details and automatically unpublish it for review
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CatalogItemInput' } } } }
+      responses:
+        '200': { description: Draft updated }
+        '404': { $ref: '#/components/responses/Problem' }
+  /v1/admin/catalog/{id}/translations:
+    post:
+      summary: Upsert a locale draft and unpublish the parent item for review
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/TranslationInput' } } } }
+      responses:
+        '201': { description: Translation draft saved }
+  /v1/admin/catalog/{id}/translations/{locale}/approval:
+    post:
+      summary: Record owner/admin review of one translated draft
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: locale, in: path, required: true, schema: { type: string } }
+      responses:
+        '201': { description: Translation approved }
+  /v1/admin/catalog/{id}/publication:
+    post:
+      summary: Publish or unpublish only after all required languages and product pricing are reviewed
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [published], properties: { published: { type: boolean } } } } } }
+      responses:
+        '201': { description: Publication state changed and audited }
+        '400': { $ref: '#/components/responses/Problem' }
+  /v1/admin/inquiries:
+    get:
+      summary: List organization availability inquiries for owner/admin
+      responses:
+        '200': { description: Tenant-scoped inquiry queue }
+        '403': { $ref: '#/components/responses/Problem' }
+  /v1/admin/inquiries/{id}:
+    get:
+      summary: Read one tenant-scoped inquiry with selected item snapshots
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Inquiry detail }
+        '404': { $ref: '#/components/responses/Problem' }
+  /v1/admin/inquiries/{id}/status:
+    post:
+      summary: Mark an inquiry contacted or closed, with an audit event
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [status], properties: { status: { type: string, enum: [contacted, closed] } } } } } }
+      responses:
+        '201': { description: Inquiry status updated }
+        '403': { $ref: '#/components/responses/Problem' }
+components:
+  securitySchemes:
+    sessionCookie: { type: apiKey, in: cookie, name: pd_session }
+  parameters:
+    ModuleKey: { name: moduleKey, in: path, required: true, schema: { type: string, enum: [crm, erp, bpm, hrms, scm, bi, eam, plm, cms, dms, ecm, its, psa, cdp, map, seo, geo] } }
+    RecordId: { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+  schemas:
+    CatalogItemInput:
+      type: object
+      additionalProperties: false
+      required: [kind]
+      properties:
+        kind: { type: string, enum: [product, service] }
+        sku: { type: [string, 'null'], description: 'Required for products; absent for services' }
+        amountPaise: { type: [integer, 'null'], minimum: 0, maximum: 1000000000 }
+        currency: { type: string, const: INR, default: INR }
+    TranslationInput:
+      type: object
+      additionalProperties: false
+      required: [locale, slug, title, summary]
+      properties:
+        locale: { type: string, example: gu }
+        slug: { type: string, pattern: '^[a-z0-9]+(-[a-z0-9]+)*$' }
+        title: { type: string, maxLength: 120 }
+        summary: { type: string, maxLength: 1200 }
+    CatalogEntry:
+      type: object
+      required: [id, kind, currency, slug, title, summary, locale]
+      properties:
+        id: { type: string, format: uuid }
+        kind: { type: string, enum: [product, service] }
+        sku: { type: [string, 'null'] }
+        amountPaise: { type: [integer, 'null'] }
+        currency: { type: string, const: INR }
+        slug: { type: string }
+        title: { type: string }
+        summary: { type: string }
+        locale: { type: string }
+        alternateSlugs: { type: object, additionalProperties: { type: string } }
+    InquiryInput:
+      type: object
+      additionalProperties: false
+      required: [name, email, locale, acceptedPolicy, items]
+      properties:
+        name: { type: string, minLength: 2, maxLength: 120 }
+        email: { type: string, format: email }
+        locale: { type: string }
+        acceptedPolicy: { type: boolean, const: true }
+        items: { type: array, minItems: 1, maxItems: 10, items: { type: object, required: [id, quantity], properties: { id: { type: string, format: uuid }, quantity: { type: integer, minimum: 1, maximum: 10 } } } }
+    Health:
+      type: object
+      properties:
+        status: { type: string, example: ok }
+    User:
+      type: object
+      required: [id, email, displayName, organizationName, role]
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        displayName: { type: string }
+        organizationName: { type: string }
+        role: { type: string, enum: [owner, admin, manager, staff, viewer] }
+    Me:
+      type: object
+      properties:
+        user: { $ref: '#/components/schemas/User' }
+    Module:
+      type: object
+      required: [key, name, description, group]
+      properties:
+        key: { type: string }
+        name: { type: string }
+        description: { type: string }
+        group: { type: string }
+    RecordInput:
+      type: object
+      required: [title]
+      additionalProperties: false
+      properties:
+        title: { type: string, minLength: 1, maxLength: 160 }
+        status: { type: string, enum: [active, draft, submitted, approved, rejected, archived], default: active }
+        data: { type: object, additionalProperties: true, default: {} }
+    Record:
+      type: object
+      required: [id, moduleKey, title, status, data, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        moduleKey: { type: string }
+        title: { type: string }
+        status: { type: string }
+        data: { type: object, additionalProperties: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    RecentRecord:
+      type: object
+      required: [id, moduleKey, title, status, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        moduleKey: { type: string }
+        title: { type: string }
+        status: { type: string }
+        updatedAt: { type: string, format: date-time }
+    Problem:
+      type: object
+      required: [type, title, status, detail]
+      properties:
+        type: { type: string, example: /problems/validation-error }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        instance: { type: string }
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              field: { type: string }
+              message: { type: string }
+  responses:
+    Problem:
+      description: Application problem response
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }

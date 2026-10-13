@@ -1,0 +1,11 @@
+{$PUBLIC_SITE_HOST} {
+	encode zstd gzip
+
+	@private path /staff /staff/* /api/*
+	header @private {
+		Cache-Control "private, no-store"
+		X-Robots-Tag "noindex, nofollow"
+	}
+
+	reverse_proxy web:3000
+}

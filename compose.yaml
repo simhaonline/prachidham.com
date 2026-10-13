@@ -1,0 +1,111 @@
+name: prachi-dham-operations
+
+services:
+  postgres:
+    image: timescale/timescaledb-ha:pg17
+    environment:
+      POSTGRES_DB: prachidham
+      POSTGRES_USER: prachi
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?Set APP_DB_PASSWORD in .env}
+    volumes:
+      - postgres_data:/home/postgres/pgdata
+      - ./infra/postgres/001_init.sql:/docker-entrypoint-initdb.d/020_app.sql:ro
+      - ./infra/postgres/020_commerce.sql:/docker-entrypoint-initdb.d/025_commerce.sql:ro
+      - ./infra/postgres/030_runtime_role.sh:/docker-entrypoint-initdb.d/030_runtime_role.sh:ro
+      - ./infra/postgres/040_commerce_grants.sql:/docker-entrypoint-initdb.d/040_commerce_grants.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U prachi -d prachidham"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+    networks: [private]
+
+  valkey:
+    image: valkey/valkey:8-alpine
+    environment:
+      VALKEY_PASSWORD: ${VALKEY_PASSWORD:?Set VALKEY_PASSWORD in .env}
+    command: ["sh", "-c", "exec valkey-server --appendonly yes --requirepass \"$$VALKEY_PASSWORD\""]
+    volumes:
+      - valkey_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "valkey-cli -a \"$$VALKEY_PASSWORD\" ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+    networks: [private]
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      DATABASE_URL: postgresql://prachi_app:${APP_DB_PASSWORD}@postgres:5432/prachidham
+      VALKEY_URL: redis://:${VALKEY_PASSWORD}@valkey:6379/0
+      PUBLIC_ORGANIZATION_SLUG: prachi-dham
+      PUBLIC_REQUIRED_LOCALES: ${PUBLIC_REQUIRED_LOCALES:-gu,hi,en}
+      PUBLIC_COMMERCE_INQUIRIES_ENABLED: ${PUBLIC_COMMERCE_INQUIRIES_ENABLED:-false}
+      COMMERCE_POLICY_VERSION: ${COMMERCE_POLICY_VERSION:-}
+      PUBLIC_PRIVACY_POLICY_URL: ${PUBLIC_PRIVACY_POLICY_URL:-}
+      PUBLIC_APP_ORIGIN: ${PUBLIC_APP_ORIGIN:-http://localhost:3000}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?Set INTERNAL_SERVICE_TOKEN in .env}
+      INTELLIGENCE_URL: http://intelligence:8000
+      GEO_URL: http://geo:8080
+    depends_on:
+      postgres: { condition: service_healthy }
+      valkey: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4000/v1/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+    restart: unless-stopped
+    networks: [private]
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    environment:
+      NODE_ENV: production
+      API_INTERNAL_URL: http://api:4000
+    ports:
+      - "127.0.0.1:${WEB_PORT:-3000}:3000"
+    depends_on:
+      api: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+    restart: unless-stopped
+    networks: [private]
+
+  intelligence:
+    build: ./services/intelligence
+    environment:
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_API_BASE: ${OPENAI_API_BASE:-https://api.openai.com/v1}
+      AI_MODEL: ${AI_MODEL:-gpt-4o-mini}
+    restart: unless-stopped
+    networks: [private]
+
+  geo:
+    build: ./services/geo
+    environment:
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
+    restart: unless-stopped
+    networks: [private]
+
+volumes:
+  postgres_data:
+  valkey_data:
+
+networks:
+  private:
+    internal: false
