@@ -2,27 +2,30 @@
 #
 # Use this when the host is managed by Plesk and Plesk's own nginx already owns
 # inbound TCP 80/443. Plesk terminates TLS and reverse-proxies to the web
-# container, so the Caddy service from compose.production.yaml is deliberately
-# NOT started here. The base file keeps web bound to 127.0.0.1:${WEB_PORT}; no
-# other service publishes a port.
-#
-# The required Plesk nginx directives (including the private no-store/noindex
-# headers the Caddyfile used to add) are documented in docs/plesk-deployment.md.
+# container, so the Caddy service is deliberately NOT started here. The base file
+# keeps web bound to 127.0.0.1:${WEB_PORT}; no other service publishes a port.
 #
 # Run with:
 #   docker compose -f compose.yaml -f compose.plesk.yaml up --build -d
 #
-# PUBLIC_SITE_HOST is a bare DNS name (for example, prachidham.com), not a URL.
+# Required in .env:
+#   PUBLIC_APP_ORIGIN       browser origin of the app/staff console, e.g. https://platform.prachidham.com
+#   PUBLIC_SITE_ORIGIN      canonical origin of the public site, e.g. https://prachidham.com
+#   PUBLIC_ALLOWED_ORIGINS  optional comma-separated allowlist for mutating requests;
+#                           blank means "PUBLIC_APP_ORIGIN only". A split-domain
+#                           deployment must list BOTH origins.
+# For a single-host deployment set both origins to https://YOUR_HOST.
 services:
   api:
     environment:
-      PUBLIC_APP_ORIGIN: https://${PUBLIC_SITE_HOST:?Set PUBLIC_SITE_HOST in .env}
+      PUBLIC_APP_ORIGIN: ${PUBLIC_APP_ORIGIN:?Set PUBLIC_APP_ORIGIN in .env}
+      PUBLIC_ALLOWED_ORIGINS: ${PUBLIC_ALLOWED_ORIGINS:-}
 
   web:
     build:
       args:
-        PUBLIC_SITE_ORIGIN: https://${PUBLIC_SITE_HOST:?Set PUBLIC_SITE_HOST in .env}
+        PUBLIC_SITE_ORIGIN: ${PUBLIC_SITE_ORIGIN:?Set PUBLIC_SITE_ORIGIN in .env}
         PUBLIC_SITE_INDEXABLE: ${PUBLIC_SITE_INDEXABLE:-false}
     environment:
-      PUBLIC_SITE_ORIGIN: https://${PUBLIC_SITE_HOST:?Set PUBLIC_SITE_HOST in .env}
+      PUBLIC_SITE_ORIGIN: ${PUBLIC_SITE_ORIGIN:?Set PUBLIC_SITE_ORIGIN in .env}
       PUBLIC_SITE_INDEXABLE: ${PUBLIC_SITE_INDEXABLE:-false}

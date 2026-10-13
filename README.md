@@ -21,7 +21,7 @@ The workspace menu names **CRM, ERP, BPM, HRMS, SCM, BI, EAM, PLM, CMS, DMS, ECM
 
 These steps are for a **new** Linux host and database volume. You need Docker Engine, Docker Compose **v2.24.4 or newer** (the production override uses `!reset`), a public DNS name pointed at the host, inbound TCP **80/443**, sufficient storage for PostgreSQL and an off-host backup plan. Run commands from the extracted repository root on a host you control.
 
-> **Hosting behind Plesk?** If `prachidham.com` is managed by Plesk, Plesk's own nginx already owns 80/443, so the Caddy service cannot bind them. Use the [`compose.plesk.yaml`](compose.plesk.yaml) overlay instead and follow the [Plesk reverse-proxy runbook](docs/plesk-deployment.md). Everything except the edge proxy is unchanged.
+> **Public site and application on different domains?** If `prachidham.com` is a public-facing Plesk host that proxies to an application VPS (for example `platform.prachidham.com`), use the [`compose.split-domain.yaml`](compose.split-domain.yaml) overlay and follow the [split-domain runbook](docs/plesk-deployment.md). If instead a single Plesk host owns 80/443 with no Caddy, use [`compose.plesk.yaml`](compose.plesk.yaml).
 
 1. **Copy the source to the host.** If using the delivered ZIP:
 
@@ -32,7 +32,7 @@ These steps are for a **new** Linux host and database volume. You need Docker En
    docker info >/dev/null
    ```
 
-2. **Create owner-only configuration.** Edit `.env` with the **bare** `PUBLIC_SITE_HOST` (for example `www.example.org`, not `https://...`) and independent, high-entropy, URL-safe values for `POSTGRES_PASSWORD`, `APP_DB_PASSWORD`, `VALKEY_PASSWORD` and `INTERNAL_SERVICE_TOKEN`. `scripts/generate-secrets.sh` writes an owner-only `.env` with four fresh secrets and refuses to overwrite an existing file. Do not commit, paste or email those values. Leave indexing, structured inquiries and AI provider credentials off for the review deployment.
+2. **Create owner-only configuration.** Edit `.env` with the **bare** `APP_HOST` (for example `www.example.org`, not `https://...`) and independent, high-entropy, URL-safe values for `POSTGRES_PASSWORD`, `APP_DB_PASSWORD`, `VALKEY_PASSWORD` and `INTERNAL_SERVICE_TOKEN`. `scripts/generate-secrets.sh` writes an owner-only `.env` with four fresh secrets and refuses to overwrite an existing file. Do not commit, paste or email those values. Leave indexing, structured inquiries and AI provider credentials off for the review deployment.
 
    ```bash
    umask 077
@@ -42,7 +42,7 @@ These steps are for a **new** Linux host and database volume. You need Docker En
    # Keep PUBLIC_SITE_INDEXABLE=false and PUBLIC_COMMERCE_INQUIRIES_ENABLED=false.
    ```
 
-   The production override derives `PUBLIC_APP_ORIGIN` and `PUBLIC_SITE_ORIGIN` from `PUBLIC_SITE_HOST`. `PUBLIC_REQUIRED_LOCALES=gu,hi,en` means all three translations need review before a catalog item can be published. This reference passes database/cache credentials as environment variables; migrate to a stronger secret-management arrangement before handling sensitive real data.[^1]
+   The production override derives `PUBLIC_APP_ORIGIN` and `PUBLIC_SITE_ORIGIN` from `APP_HOST`. `PUBLIC_REQUIRED_LOCALES=gu,hi,en` means all three translations need review before a catalog item can be published. This reference passes database/cache credentials as environment variables; migrate to a stronger secret-management arrangement before handling sensitive real data.[^1]
 
 3. **Validate and start** the base file followed by the production override. Docker documents this `-f` order for merging a production-specific Compose file.[^2] The merged graph should expose **only Caddy on 80/443**; web, API, PostgreSQL, Valkey, Python and Go remain private. Avoid sharing the full `config` output because it can contain interpolated secrets.
 

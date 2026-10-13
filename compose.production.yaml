@@ -1,24 +1,27 @@
+# Single-host HTTPS deployment behind Caddy.
 # Run with: docker compose -f compose.yaml -f compose.production.yaml up --build -d
-# PUBLIC_SITE_HOST is a bare DNS name (for example, www.example.org), not a URL.
+# APP_HOST is a bare DNS name (for example, www.example.org), not a URL. In this
+# topology the public site and the application share one hostname; for separate
+# hostnames use compose.split-domain.yaml instead.
 services:
   api:
     environment:
-      PUBLIC_APP_ORIGIN: https://${PUBLIC_SITE_HOST:?Set PUBLIC_SITE_HOST in .env}
+      PUBLIC_APP_ORIGIN: https://${APP_HOST:?Set APP_HOST in .env}
 
   web:
     build:
       args:
-        PUBLIC_SITE_ORIGIN: https://${PUBLIC_SITE_HOST:?Set PUBLIC_SITE_HOST in .env}
+        PUBLIC_SITE_ORIGIN: https://${APP_HOST:?Set APP_HOST in .env}
         PUBLIC_SITE_INDEXABLE: ${PUBLIC_SITE_INDEXABLE:-false}
     environment:
-      PUBLIC_SITE_ORIGIN: https://${PUBLIC_SITE_HOST:?Set PUBLIC_SITE_HOST in .env}
+      PUBLIC_SITE_ORIGIN: https://${APP_HOST:?Set APP_HOST in .env}
       PUBLIC_SITE_INDEXABLE: ${PUBLIC_SITE_INDEXABLE:-false}
     ports: !reset []
 
   proxy:
     image: caddy:2-alpine
     environment:
-      PUBLIC_SITE_HOST: ${PUBLIC_SITE_HOST:?Set PUBLIC_SITE_HOST in .env}
+      APP_HOST: ${APP_HOST:?Set APP_HOST in .env}
     ports:
       - "80:80"
       - "443:443"

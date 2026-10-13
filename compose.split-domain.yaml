@@ -1,0 +1,53 @@
+# Split-domain deployment.
+#
+# The public website and the staff console/API are served under two different
+# hostnames (for example prachidham.com and platform.prachidham.com) while a
+# single Next.js process still renders both. Caddy runs on the application host
+# and obtains its own certificate; an upstream proxy (for example Plesk's nginx
+# on the public hostname) forwards public traffic to it.
+#
+# Run with:
+#   docker compose -f compose.yaml -f compose.split-domain.yaml up --build -d
+#
+# Required in .env:
+#   APP_HOST                bare DNS name Caddy serves, e.g. platform.prachidham.com
+#   PUBLIC_APP_ORIGIN       browser origin of the app/staff console, e.g. https://platform.prachidham.com
+#   PUBLIC_SITE_ORIGIN      canonical origin of the public site, e.g. https://prachidham.com
+#   PUBLIC_ALLOWED_ORIGINS  optional comma-separated allowlist for mutating requests;
+#                           blank means "PUBLIC_APP_ORIGIN only". A split-domain
+#                           deployment must list BOTH origins.
+services:
+  api:
+    environment:
+      PUBLIC_APP_ORIGIN: ${PUBLIC_APP_ORIGIN:?Set PUBLIC_APP_ORIGIN in .env}
+      PUBLIC_ALLOWED_ORIGINS: ${PUBLIC_ALLOWED_ORIGINS:-}
+
+  web:
+    build:
+      args:
+        PUBLIC_SITE_ORIGIN: ${PUBLIC_SITE_ORIGIN:?Set PUBLIC_SITE_ORIGIN in .env}
+        PUBLIC_SITE_INDEXABLE: ${PUBLIC_SITE_INDEXABLE:-false}
+    environment:
+      PUBLIC_SITE_ORIGIN: ${PUBLIC_SITE_ORIGIN:?Set PUBLIC_SITE_ORIGIN in .env}
+      PUBLIC_SITE_INDEXABLE: ${PUBLIC_SITE_INDEXABLE:-false}
+    ports: !reset []
+
+  proxy:
+    image: caddy:2-alpine
+    environment:
+      APP_HOST: ${APP_HOST:?Set APP_HOST in .env}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./infra/proxy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      web: { condition: service_healthy }
+    restart: unless-stopped
+    networks: [private]
+
+volumes:
+  caddy_data:
+  caddy_config:
